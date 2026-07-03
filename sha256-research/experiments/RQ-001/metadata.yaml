@@ -1,0 +1,21 @@
+id: RQ-001
+title: What information changes when only the Bitcoin nonce changes?
+status: in_progress
+hypothesis: When only the nonce changes, only W3 of Block 1 (the nonce word) is directly affected; all other changes are caused by diffusion through the message schedule
+datasets:
+  - analysis/message_schedule/output/nonce_influence.csv
+  - analysis/message_schedule/output/nonce_influence.json
+tools:
+  - tools/sha256_trace.py
+  - analysis/message_schedule/nonce_influence.py
+results:
+  - stage: A (W0-W15)
+    status: complete
+    finding: Block 0 all 64 words invariant; Block 1 W3 is the only nonce-dependent input word
+  - stage: B (W16-W63)  
+    status: complete
+    finding: Nonce influence first appears at W18 (via S0(W3) dependency), then spreads to all W18-W63
+  - stage: C (quantified influence)
+    status: complete
+    finding: 82/128 words invariant (64%), 46 words fully influenced (36%)
+next_steps: Enhance tool to quantify bit-level influence (percentage of bits affected per word)
