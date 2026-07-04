@@ -1,0 +1,19 @@
+id: RQ-002
+title: How does nonce influence propagate through the 64 compression rounds?
+status: complete
+hypothesis: Nonce influence enters the compression state at round 3 of Block 1 (when W3 is first used), and spreads to all 8 state variables within a few rounds due to the avalanche effect
+datasets:
+  - analysis/message_schedule/output/compression_influence.csv
+  - analysis/message_schedule/output/compression_influence.json
+tools:
+  - tools/sha256_trace.py (sha256_compress_trace)
+  - analysis/message_schedule/nonce_influence.py (--compress)
+results:
+  - first_influence_round: 67 (R3 of Block 1)
+  - spread_2vars_round: 67
+  - spread_4vars_round: 68
+  - spread_6vars_round: 69
+  - spread_8vars_round: 70 (R6 of Block 1)
+  - rounds_to_full_avalanche: 3 (from first influence to all 8 vars)
+  - total_fully_influenced_rounds: 58/64 (90.6% of Block 1 compression)
+next_steps: RQ-003 - Investigate whether any compression rounds can be skipped or cached for nonce variation

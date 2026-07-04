@@ -110,6 +110,48 @@ def sha256_compress(W: list, state: list = None) -> list:
     return [(state[i] + v) & 0xFFFFFFFF for i, v in enumerate([a, b, c, d, e, f, g, h])]
 
 
+def sha256_compress_trace(W: list, state: list = None) -> tuple:
+    """Same as sha256_compress but returns round-by-round state history.
+    
+    Args:
+        W: Message schedule (64 uint32 values)
+        state: Initial state (8 uint32), or None for IV
+    
+    Returns:
+        (final_state, round_trace)
+        round_trace[t] = (a,b,c,d,e,f,g,h) after round t (list of 8 uint32)
+    """
+    assert len(W) == 64
+
+    if state is None:
+        state = list(H0)
+    a, b, c, d, e, f, g, h = state
+
+    round_trace = []
+
+    for t in range(64):
+        S1 = rr(e, 6) ^ rr(e, 11) ^ rr(e, 25)
+        ch = (e & f) ^ ((~e & 0xFFFFFFFF) & g)
+        temp1 = (h + S1 + ch + K[t] + W[t]) & 0xFFFFFFFF
+        S0 = rr(a, 2) ^ rr(a, 13) ^ rr(a, 22)
+        maj = (a & b) ^ (a & c) ^ (b & c)
+        temp2 = (S0 + maj) & 0xFFFFFFFF
+
+        h_next = g
+        g_next = f
+        f_next = e
+        e_next = (d + temp1) & 0xFFFFFFFF
+        d_next = c
+        c_next = b
+        b_next = a
+        a_next = (temp1 + temp2) & 0xFFFFFFFF
+
+        a, b, c, d, e, f, g, h = a_next, b_next, c_next, d_next, e_next, f_next, g_next, h_next
+        round_trace.append([a, b, c, d, e, f, g, h])
+
+    return [(state[i] + v) & 0xFFFFFFFF for i, v in enumerate([a, b, c, d, e, f, g, h])], round_trace
+
+
 def sha256_full(data: bytes, trace: bool = False) -> bytes:
     """Compute full SHA-256 digest.
     

@@ -29,7 +29,7 @@ import sys
 # Add parent directory for tools import
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '../../tools'))
 
-from sha256_trace import sha256_schedule, sha256_compress, sha256_pad, H0
+from sha256_trace import sha256_schedule, sha256_compress, sha256_compress_trace, sha256_pad, H0
 
 
 def build_block_header(nonce: int) -> bytes:
@@ -217,6 +217,231 @@ def print_summary(result: dict):
     return percentages
 
 
+def compute_compression_influence(nonce_base: int = 0,
+                                  nonce_bits: list = None,
+                                  block_count: int = 2) -> dict:
+    """Trace how nonce influence propagates through compression rounds.
+    
+    For each nonce bit, flips that bit and tracks which state variables
+    (a-h) differ from the base nonce after each of the 64 rounds.
+    
+    Returns:
+        dict: {
+            'base_nonce': int,
+            'block_count': int,
+            'round_influence': {
+                bit_idx: {
+                    'first_round': int (first round where any var differs),
+                    'all_vars_round': int (round where all 8 vars differ),
+                    'rounds': [ list of round indices where any var differs ],
+                    'var_first_round': { var_name: int (first round this var differs) },
+                    'affected_vars': { round_idx: [list of var names that differ] }
+                }
+            },
+            'summary': {
+                'first_nonzero_round': int,
+                'all_vars_round': int,
+                'vars_influenced_per_round': { round_idx: int (count of vars, 0-8) }
+            }
+        }
+    """
+    if nonce_bits is None:
+        nonce_bits = list(range(32))
+
+    VAR_NAMES = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h']
+
+    # Build base header and compute compression trace for each block
+    base_header = build_block_header(nonce_base)
+    base_padded = sha256_pad(base_header)
+
+    base_traces = []
+    base_states = list(H0)
+    for b in range(block_count):
+        block = base_padded[b*64:(b+1)*64]
+        W = sha256_schedule(block)
+        _, trace = sha256_compress_trace(W, base_states)
+        base_traces.append(trace)
+        base_states = sha256_compress(W, base_states)  # state for next block
+
+    result = {
+        'base_nonce': nonce_base,
+        'block_count': block_count,
+        'round_influence': {},
+        'summary': {},
+    }
+
+    all_first_rounds = []
+    all_all_vars_rounds = []
+
+    for bit_idx in nonce_bits:
+        flipped_nonce = nonce_base ^ (1 << bit_idx)
+        flipped_header = build_block_header(flipped_nonce)
+        flipped_padded = sha256_pad(flipped_header)
+
+        flipped_states = list(H0)
+        round_info = {
+            'rounds': [],
+            'var_first_round': {},
+            'affected_vars': {},
+        }
+
+        for b in range(block_count):
+            flipped_W = sha256_schedule(flipped_padded[b*64:(b+1)*64])
+            _, flipped_trace = sha256_compress_trace(flipped_W, flipped_states)
+            base_trace = base_traces[b]
+
+            for r in range(64):
+                # Compare round r state
+                affected = []
+                for vi, vn in enumerate(VAR_NAMES):
+                    if flipped_trace[r][vi] != base_trace[r][vi]:
+                        affected.append(vn)
+                        if vn not in round_info['var_first_round']:
+                            round_info['var_first_round'][vn] = b * 64 + r
+
+                if affected:
+                    abs_round = b * 64 + r
+                    round_info['rounds'].append(abs_round)
+                    round_info['affected_vars'][abs_round] = affected
+
+            # Update state for next block
+            flipped_states = sha256_compress(flipped_W, flipped_states)
+
+        first_round = min(round_info['rounds']) if round_info['rounds'] else None
+        all_vars_round = None
+        for r in sorted(round_info.get('affected_vars', {})):
+            if len(round_info['affected_vars'][r]) >= 8:
+                all_vars_round = r
+                break
+
+        round_info['first_round'] = first_round
+        round_info['all_vars_round'] = all_vars_round
+        result['round_influence'][bit_idx] = round_info
+
+        if first_round is not None:
+            all_first_rounds.append(first_round)
+        if all_vars_round is not None:
+            all_all_vars_rounds.append(all_vars_round)
+
+    # Compute summary
+    max_rounds = block_count * 64
+    vars_per_round = {}
+    for r in range(max_rounds):
+        count = 0
+        for bit_idx in nonce_bits:
+            vars_at_r = round_info_for_bit(result, bit_idx, r)
+            count = max(count, len(vars_at_r))
+        vars_per_round[r] = count
+
+    result['summary'] = {
+        'first_nonzero_round': min(all_first_rounds) if all_first_rounds else None,
+        'all_vars_round': max(all_all_vars_rounds) if all_all_vars_rounds else None,
+        'all_vars_round_avg': (sum(all_all_vars_rounds) / len(all_all_vars_rounds)
+                               if all_all_vars_rounds else None),
+        'vars_influenced_per_round': vars_per_round,
+    }
+
+    return result
+
+
+def round_info_for_bit(result: dict, bit_idx: int, round_idx: int) -> list:
+    """Get affected variable names for a given bit and round."""
+    info = result['round_influence'].get(bit_idx, {})
+    return info.get('affected_vars', {}).get(round_idx, [])
+
+
+def print_compression_summary(result: dict):
+    """Print a text summary of compression influence."""
+    print(f"\nCompression Influence Summary")
+    print(f"{'=' * 60}")
+    print(f"Base nonce: 0x{result['base_nonce']:08x}")
+    print(f"Blocks analyzed: {result['block_count']}")
+    print()
+
+    s = result['summary']
+    print(f"First non-zero influence round: {s['first_nonzero_round']}")
+    print(f"First round where ALL 8 vars influenced: ~{s['all_vars_round']}")
+    print()
+
+    # Round-by-round influence table
+    total_rounds = result['block_count'] * 64
+    print(f"{'Round':<8} {'Block':<6} {'Vars':<6} {'W[t] influenced?':<20}")
+    print(f"{'-' * 60}")
+
+    # Find the block ranges
+    block_size = 64
+    for b in range(result['block_count']):
+        block_start = b * block_size
+        block_end = (b + 1) * block_size
+        for r in range(block_start, block_end):
+            vpr = s['vars_influenced_per_round'][r]
+            if vpr > 0:
+                local_r = r % block_size
+                print(f"R{local_r:<4}  Block{b:<4} {vpr:<6}  (W{local_r}{'' if local_r >= 18 else ', invariant'})")
+        print()
+
+    # Summary stats
+    print(f"Rounds with any influence: "
+          f"{sum(1 for r in range(total_rounds) if s['vars_influenced_per_round'][r] > 0)}/{total_rounds}")
+    print(f"Rounds with full (8 var) influence: "
+          f"{sum(1 for r in range(total_rounds) if s['vars_influenced_per_round'][r] >= 8)}/{total_rounds}")
+
+
+def export_compression_json(result: dict, filepath: str):
+    """Export compression influence as JSON."""
+    output = {
+        'base_nonce': result['base_nonce'],
+        'block_count': result['block_count'],
+        'summary': result['summary'],
+        'round_influence': {},
+    }
+
+    # Convert to serializable
+    for bit_idx, info in result['round_influence'].items():
+        output['round_influence'][str(bit_idx)] = {
+            'first_round': info['first_round'],
+            'all_vars_round': info['all_vars_round'],
+            'rounds': info['rounds'],
+            'var_first_round': info['var_first_round'],
+            'affected_vars': {
+                str(r): vars for r, vars in info['affected_vars'].items()
+            },
+        }
+
+    with open(filepath, 'w') as f:
+        json.dump(output, f, indent=2)
+    print(f"  JSON exported: {filepath}")
+
+
+def export_compression_csv(result: dict, filepath: str):
+    """Export compression influence as CSV.
+    
+    Rows = nonce bits, Columns = round_var pairs (e.g., R0_a, R0_b, ..., R63_h).
+    Cell value = 1 if bit affects that var at that round, 0 otherwise.
+    """
+    VAR_NAMES = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h']
+    total_rounds = result['block_count'] * 64
+
+    with open(filepath, 'w', newline='') as f:
+        writer = csv.writer(f)
+        header = ['nonce_bit']
+        for r in range(total_rounds):
+            for vn in VAR_NAMES:
+                header.append(f'R{r}_{vn}')
+        writer.writerow(header)
+
+        for bit in range(32):
+            row = [bit]
+            info = result['round_influence'].get(bit, {})
+            for r in range(total_rounds):
+                affected = info.get('affected_vars', {}).get(r, [])
+                for vn in VAR_NAMES:
+                    row.append(1 if vn in affected else 0)
+            writer.writerow(row)
+
+    print(f"  CSV exported: {filepath}")
+
+
 def main():
     parser = argparse.ArgumentParser(description='Nonce Influence Matrix')
     parser.add_argument('--nonce', type=int, default=0,
@@ -227,6 +452,8 @@ def main():
                         help='Number of SHA-256 blocks to analyze (default: 2)')
     parser.add_argument('--output-dir', type=str, default='.',
                         help='Output directory for exported files')
+    parser.add_argument('--compress', action='store_true',
+                        help='Also trace influence through compression rounds')
     args = parser.parse_args()
 
     print("=" * 60)
@@ -234,21 +461,35 @@ def main():
     print("=" * 60)
     print(f"Base nonce: 0x{args.nonce:08x}")
     print(f"Blocks:     {args.blocks}")
+    if args.compress:
+        print(f"Compression tracing: enabled")
     print()
 
+    # Message schedule influence
     result = compute_nonce_influence(args.nonce, args.nonce_bits, args.blocks)
-
     print_summary(result)
 
-    # Export
+    # Export schedule data
     if args.output_dir:
         os.makedirs(args.output_dir, exist_ok=True)
-
         csv_path = os.path.join(args.output_dir, 'nonce_influence.csv')
         export_csv(result, csv_path)
-
         json_path = os.path.join(args.output_dir, 'nonce_influence.json')
         export_json(result, json_path)
+
+    # Compression influence (if requested)
+    if args.compress:
+        print("\n" + "=" * 60)
+        print("Compression Round Tracing")
+        print("=" * 60)
+        comp_result = compute_compression_influence(args.nonce, args.nonce_bits, args.blocks)
+        print_compression_summary(comp_result)
+
+        if args.output_dir:
+            csv_path = os.path.join(args.output_dir, 'compression_influence.csv')
+            export_compression_csv(comp_result, csv_path)
+            json_path = os.path.join(args.output_dir, 'compression_influence.json')
+            export_compression_json(comp_result, json_path)
 
     print("\nDone.")
 

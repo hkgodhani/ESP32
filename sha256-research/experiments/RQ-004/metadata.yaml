@@ -1,0 +1,31 @@
+id: RQ-004
+title: Formal Precomputation Boundary — maximum SHA-256 computation that can be precomputed across nonce changes
+status: complete
+hypothesis: The 29 invariant compression operations identified in RQ-003 can be precomputed and reused, achieving measurable savings beyond the standard midstate optimization
+tools:
+  - experiments/RQ-004/precompute_boundary.py
+results:
+  correctness:
+    tested_nonces: 100
+    passed: 100
+    failed: 0
+  compression_savings:
+    block0_ops_cached: 512
+    block1_compression_cached: 29
+    total_compression_ops_cached: 541
+    compression_reuse_ratio: 0.5283
+  schedule_cost:
+    words_to_recompute: 46
+    words_to_recompute_range: W18-W63
+    estimated_ops_for_schedule: 230
+  net_result:
+    compression_savings: 29
+    schedule_cost: 230
+    net_savings: -201
+    conclusion: PRECOMPUTATION BOUNDARY EXISTS BUT IS NEGATIVE
+  practical_viability: false
+  reason: "The 29 compression operations saved are outweighed by the ~230 schedule expansion operations that must be recomputed per nonce because W[18]-W[63] depend on W[3]"
+next_steps: >
+  The search for a hidden SHA-256 optimization under Bitcoin nonce variation is now bounded.
+  No operation-level precomputation beyond midstate is practically viable.
+  Future research should investigate algorithmic alternatives or hardware-specific optimizations.

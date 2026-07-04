@@ -1,0 +1,18 @@
+cff-version: 1.2.0
+message: "If you use this research in your work, please cite it as below."
+title: "SHA-256 Under Bitcoin Nonce Variation: An Experimental Study"
+version: "v1.0.0"
+date-released: 2026-07-04
+authors:
+  - given-names: Harsh
+    family-names: Godhani
+    affiliation: ""
+    orcid: ""
+repository-code: "https://github.com/hkgodhani/ESP32"
+license: "MIT"
+keywords:
+  - SHA-256
+  - Bitcoin
+  - Nonce Variation
+  - Precomputation Boundary
+  - ESP32

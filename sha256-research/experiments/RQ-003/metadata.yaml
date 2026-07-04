@@ -1,0 +1,26 @@
+id: RQ-003
+title: Which computations performed during SHA-256 are mathematically identical across all nonce values for a fixed block header?
+status: complete
+hypothesis: Operations whose inputs are entirely invariant (both state variables and schedule words) will produce identical outputs regardless of nonce. These operations can be precomputed.
+tools:
+  - analysis/compute_dependency.py
+results:
+  - total_operations: 1024 (2 blocks × 64 rounds × 8 ops)
+  - invariant_operations: 541 (52.8%)
+  - nonce_dependent_operations: 483 (47.2%)
+  - block0_invariant: 512/512 (100%)
+  - block1_invariant: 29/512 (5.7%)
+  - invariant_by_round:
+      - R0-R2: all 8 ops invariant (24 ops, no nonce influence yet)
+      - R3: 5/8 ops invariant (S1, ch, S0, maj, temp2 — nonce enters via W3)
+      - R4-R63: 0/8 ops invariant (state fully influenced)
+    invariant_op_types:
+      - S1: 68/128 rounds (53.1%) — invariant when e is invariant
+      - ch: 68/128 rounds (53.1%) — invariant when e,f,g are invariant
+      - temp1: 67/128 rounds (52.3%) — invariant when h,S1,ch,W[t] are invariant
+      - S0: 68/128 rounds (53.1%) — invariant when a is invariant
+      - maj: 68/128 rounds (53.1%) — invariant when a,b,c are invariant
+      - temp2: 68/128 rounds (53.1%) — invariant when S0,maj are invariant
+      - e_new: 67/128 rounds (52.3%) — invariant when d,temp1 are invariant
+      - a_new: 67/128 rounds (52.3%) — invariant when temp1,temp2 are invariant
+next_steps: RQ-004 - Determine which invariant operations can be safely precomputed and reused without changing the final SHA-256 output

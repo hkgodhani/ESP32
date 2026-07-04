@@ -48,7 +48,7 @@
 | Block 0 (W0-W63) | 64 | 64 | 0 | 100% |
 | Block 1 input (W0-W15) | 16 | 15 | 1 (W3) | 93.75% |
 | Block 1 generated (W16-W63) | 48 | 2 (W16-W17) | 46 (W18-W63) | 4.17% |
-| **Total** | **128** | **82** | **46** | **64.1%** |
+| **Total** | **128** | **81** | **47** | **63.3%** |
 
 ---
 
@@ -66,14 +66,14 @@ Nonce influence first appears at W18 of Block 1 via the `S0(W3)` term in the mes
 
 **Implication**: W16 and W17 can be precomputed (they depend only on invariant inputs). W18-W63 must be recomputed every nonce change. This is worth 2 saved schedule expansions per hash.
 
-### Key Finding 3: 64% of schedule computation is invariant
+### Key Finding 3: 63.3% of schedule computation is invariant
 
-82 out of 128 schedule words do not change when the nonce changes. This means:
+81 out of 128 schedule words do not change when the nonce changes. This means:
 - Block 0's entire schedule (64 words + 64 rounds of compression) is precomputable
 - Block 1's W0-W2, W4-W17 (18 words) are precomputable
 - Only Block 1's W3 + W18-W63 (47 words) depend on the nonce
 
-**Implication**: The message schedule computation for a Bitcoin block header is 64% invariant under nonce variation. Any optimization that caches or skips invariant schedule computation could save ~64% of schedule expansion cycles.
+**Implication**: The message schedule computation for a Bitcoin block header is 63.3% invariant under nonce variation. Any optimization that caches or skips invariant schedule computation could save ~63% of schedule expansion cycles.
 
 ---
 
@@ -104,5 +104,5 @@ python analysis/message_schedule/nonce_influence.py --output-dir output
 # Visualize
 python analysis/message_schedule/visualize_matrix.py --input output/nonce_influence.csv
 
-# Expected: 82/128 invariant words, 46/128 nonce-dependent words
+# Expected: 81/128 invariant words, 47/128 nonce-dependent words
 ```
